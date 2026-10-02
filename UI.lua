@@ -3767,16 +3767,26 @@ local severityIcons = {success = "check-circle", warning = "alert-triangle", err
 local severityColors = {success = Color3.fromRGB(78, 201, 120), warning = Color3.fromRGB(242, 176, 70), error = Color3.fromRGB(238, 92, 92)}
 local resolvedIcon = Config.Icon or severityIcons[inferred]
 
+NewNotification.Matte = New("Frame", {
+    Size = UDim2.fromScale(1, 1),
+    BackgroundTransparency = 0.08,
+    BorderSizePixel = 0,
+    ThemeTag = {BackgroundColor3 = "AcrylicMain"},
+}, {
+    New("UICorner", {CornerRadius = UDim.new(0, 12)}),
+})
+
 NewNotification.Icon = New("ImageLabel", {
     Image = resolvedIcon and Library:GetIcon(resolvedIcon) or "",
-    Size = UDim2.fromOffset(24, 24),
-    Position = UDim2.new(0, 14, 0, 14),
+    Size = UDim2.fromOffset(18, 18),
+    Position = UDim2.new(0, 14, 0, 12),
     BackgroundTransparency = 1,
-    ThemeTag = { ImageColor3 = "Text" },
+    ImageColor3 = severityColors[inferred] or Creator.GetThemeProperty("Accent"),
+    ThemeTag = inferred == "info" and {ImageColor3 = "Accent"} or nil,
 })
 
 NewNotification.Title = New("TextLabel", {
-    Position = UDim2.new(0, 46, 0, 13),
+    Position = UDim2.new(0, 40, 0, 13),
     Text = Config.Title,
     RichText = true,
     TextColor3 = Color3.fromRGB(255, 255, 255),
@@ -3785,7 +3795,7 @@ NewNotification.Title = New("TextLabel", {
     TextSize = 12,
     TextXAlignment = "Left",
     TextYAlignment = "Center",
-    Size = UDim2.new(1, -70, 0, 14),
+    Size = UDim2.new(1, -96, 0, 14),
     TextWrapped = true,
     BackgroundTransparency = 1,
     ThemeTag = {
@@ -3871,7 +3881,7 @@ NewNotification.Title = New("TextLabel", {
 			Text = "",
 			Visible = false,
 			Size = UDim2.fromOffset(28, 16),
-			Position = UDim2.new(1, -40, 0, 15),
+			Position = UDim2.new(1, -42, 0, 15),
 			AnchorPoint = Vector2.new(1, 0),
 			BackgroundTransparency = 1,
 			TextSize = 11,
@@ -3884,6 +3894,7 @@ NewNotification.Title = New("TextLabel", {
 			Size = UDim2.new(1, 0, 1, 0),
 			Position = UDim2.fromScale(1, 0),
 		}, {
+			NewNotification.Matte,
 			NewNotification.AcrylicPaint.Frame,
 			NewNotification.SeverityBar,
 		    NewNotification.Icon,
