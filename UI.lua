@@ -4802,7 +4802,6 @@ Components.Window = (function()
 				local haystack = string.lower((command.Title or "") .. " " .. (command.Keywords or ""))
 				if query == "" or haystack:find(query, 1, true) then
 					shown = shown + 1
-					if shown > 8 then break end
 					local button = New("TextButton", {
 						Size = UDim2.new(1, -2, 0, Mobile and 42 or 44),
 						Text = "",
