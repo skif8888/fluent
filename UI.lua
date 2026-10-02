@@ -847,6 +847,11 @@ local Library = {
 	Transparency = true,
 	MinimizeKeybind = nil,
 	MinimizeKey = Enum.KeyCode.LeftControl,
+	Density = Mobile and "Dense" or "Comfortable",
+	DensityBindings = {},
+	AnimationScale = 1,
+	PerformanceMode = false,
+	AcrylicRequested = false,
 }
 
 local function isMotor(value)
@@ -1910,6 +1915,33 @@ end
 
 Library.Creator = Creator
 
+local DensityScales = {Dense = 0.8, Comfortable = 1, Spacious = 1.18}
+
+function Library:BindDensity(Instance, Property, BaseOffset)
+	if not Instance then return end
+	table.insert(self.DensityBindings, {Instance = Instance, Property = Property, BaseOffset = BaseOffset})
+	local scale = DensityScales[self.Density] or 1
+	pcall(function()
+		Instance[Property] = UDim.new(0, math.floor(BaseOffset * scale + 0.5))
+	end)
+end
+
+function Library:SetDensity(Value)
+	if not DensityScales[Value] then return end
+	self.Density = Value
+	local scale = DensityScales[Value]
+	for index = #self.DensityBindings, 1, -1 do
+		local binding = self.DensityBindings[index]
+		if not binding.Instance or not binding.Instance.Parent then
+			table.remove(self.DensityBindings, index)
+		else
+			pcall(function()
+				binding.Instance[binding.Property] = UDim.new(0, math.floor(binding.BaseOffset * scale + 0.5))
+			end)
+		end
+	end
+end
+
 Library.MiniMessageToRichText = MiniMessageToRichText
 
 local New = Creator.New
@@ -2394,6 +2426,12 @@ Components.Element = (function()
 			Element.DescLabel,
 		})
 
+		Element.Padding = Element.LabelHolder:FindFirstChildOfClass("UIPadding")
+		if Element.Padding then
+			Library:BindDensity(Element.Padding, "PaddingTop", Mobile and 9 or 11)
+			Library:BindDensity(Element.Padding, "PaddingBottom", Mobile and 9 or 11)
+		end
+
 		Element.Border = New("UIStroke", {
 			Transparency = 0.85,
 			ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
@@ -2501,16 +2539,61 @@ Components.Element = (function()
 			Element.Frame.Visible = Bool
 		end
 
+		function Element:SetDisabled(Bool, Reason)
+			Element.Disabled = Bool and true or false
+			Element.DisabledReason = Reason
+			Element.Frame.Active = not Element.Disabled
+			Element.TitleLabel.TextTransparency = Element.Disabled and 0.45 or 0
+			Element.DescLabel.TextTransparency = Element.Disabled and 0.62 or 0
+			Element.Border.Transparency = Element.Disabled and 0.94 or 0.85
+			if Element.IconImage then
+				Element.IconImage.ImageTransparency = Element.Disabled and 0.55 or 0
+			end
+		end
+
 		function Element:SetDesc(Set)
 			if Set == nil then
 				Set = ""
 			end
-			if Set == "" then
-				Element.DescLabel.Visible = false
-			else
-				Element.DescLabel.Visible = true
+			if Element.ExpandButton then
+				Element.ExpandButton:Destroy()
+				Element.ExpandButton = nil
 			end
+			Element.DescExpanded = false
 			Element.DescLabel.Text = Set
+			Element.DescLabel.Visible = Set ~= ""
+			local plain = tostring(Set):gsub("<[^>]->", "")
+			local limit = Mobile and 92 or 150
+			if Set ~= "" and #plain > limit then
+				Element.DescLabel.AutomaticSize = Enum.AutomaticSize.None
+				Element.DescLabel.Size = UDim2.new(1, 0, 0, Mobile and 28 or 30)
+				Element.DescLabel.TextTruncate = Enum.TextTruncate.AtEnd
+				Element.ExpandButton = New("TextButton", {
+					Text = "More",
+					FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium),
+					TextSize = Mobile and 10 or 11,
+					TextXAlignment = Enum.TextXAlignment.Left,
+					BackgroundTransparency = 1,
+					AutomaticSize = Enum.AutomaticSize.X,
+					Size = UDim2.new(0, 0, 0, 17),
+					LayoutOrder = 4,
+					Parent = Element.LabelHolder,
+					ThemeTag = {TextColor3 = "Accent"},
+				})
+				Creator.AddSignal(Element.ExpandButton.MouseButton1Click, function()
+					Element.DescExpanded = not Element.DescExpanded
+					Element.ExpandButton.Text = Element.DescExpanded and "Less" or "More"
+					Element.DescLabel.TextTruncate = Element.DescExpanded and Enum.TextTruncate.None or Enum.TextTruncate.AtEnd
+					Element.DescLabel.AutomaticSize = Element.DescExpanded and Enum.AutomaticSize.Y or Enum.AutomaticSize.None
+					if not Element.DescExpanded then
+						Element.DescLabel.Size = UDim2.new(1, 0, 0, Mobile and 28 or 30)
+					end
+				end)
+			else
+				Element.DescLabel.AutomaticSize = Enum.AutomaticSize.Y
+				Element.DescLabel.TextTruncate = Enum.TextTruncate.None
+				Element.DescLabel.Size = UDim2.new(1, 0, 0, 14)
+			end
 			if Library.Window and Library.Window.AllElements and Library.Window.AllElements[Element.Frame] then
 				Library.Window.AllElements[Element.Frame].description = Set
 			elseif Library.Windows and #Library.Windows > 0 then
@@ -2583,6 +2666,7 @@ Components.Section = (function()
 		Section.Layout = New("UIListLayout", {
 			Padding = UDim.new(0, 5),
 		})
+		Library:BindDensity(Section.Layout, "Padding", 5)
 
 		Section.Container = New("Frame", {
 			Size = UDim2.new(1, 0, 0, 26),
@@ -2759,6 +2843,7 @@ Components.Tab = (function()
 			Padding = UDim.new(0, 5),
 			SortOrder = Enum.SortOrder.LayoutOrder,
 		})
+		Library:BindDensity(ContainerLayout, "Padding", 5)
 
 		Tab.ContainerAnim = New("CanvasGroup", {
 			Size = UDim2.fromScale(1, 1),
@@ -3629,8 +3714,8 @@ Components.Notification = (function()
 		Library.ActiveNotifications = Library.ActiveNotifications or {}
 
 		Notification.Holder = New("Frame", {
-			Position = UDim2.new(1, Mobile and -12 or -30, 1, Mobile and -12 or -30),
-			Size = UDim2.new(0, math.max(240, math.min(310, Camera.ViewportSize.X - (Mobile and 24 or 60))), 1, Mobile and -12 or -30),
+			Position = UDim2.new(1, Mobile and -8 or -24, 1, Mobile and -8 or -24),
+			Size = UDim2.new(0, math.max(240, math.min(Mobile and 360 or 330, Camera.ViewportSize.X - (Mobile and 16 or 48))), 1, Mobile and -8 or -24),
 			AnchorPoint = Vector2.new(1, 1),
 			BackgroundTransparency = 1,
 			Parent = GUI,
@@ -3639,7 +3724,7 @@ Components.Notification = (function()
 				HorizontalAlignment = Enum.HorizontalAlignment.Center,
 				SortOrder = Enum.SortOrder.LayoutOrder,
 				VerticalAlignment = Enum.VerticalAlignment.Bottom,
-				Padding = UDim.new(0, 20),
+				Padding = UDim.new(0, Mobile and 8 or 10),
 			}),
 		})
 	end
@@ -3649,14 +3734,41 @@ Components.Notification = (function()
 		Config.Content = Config.Content or "Content"
 		Config.SubContent = Config.SubContent or ""
 		Config.Duration = Config.Duration or nil
+		local inferred = string.lower(tostring(Config.Type or Config.Severity or ""))
+		if inferred == "" then
+			local titleLower = string.lower(tostring(Config.Title))
+			if titleLower:find("error", 1, true) or titleLower:find("failed", 1, true) then inferred = "error"
+			elseif titleLower:find("warning", 1, true) then inferred = "warning"
+			elseif titleLower:find("success", 1, true) or titleLower:find("stored", 1, true) then inferred = "success"
+			else inferred = "info" end
+		end
+		local key = Config.Key or (tostring(Config.Title) .. "\0" .. tostring(Config.Content) .. "\0" .. inferred)
+		for _, active in ipairs(Library.ActiveNotifications or {}) do
+			if active and not active.Closed and active.Key == key and active.Increment then
+				active:Increment()
+				return active
+			end
+		end
+		while #(Library.ActiveNotifications or {}) >= 4 do
+			local oldest = Library.ActiveNotifications[1]
+			if oldest and oldest.Close then oldest:Close() else break end
+		end
 		local NewNotification = {
 			Closed = false,
+			Key = key,
+			Count = 1,
+			Severity = inferred,
+			ExpireToken = 0,
 		}
 
 		NewNotification.AcrylicPaint = Acrylic.AcrylicPaint()
 
+local severityIcons = {success = "check-circle", warning = "alert-triangle", error = "x-circle", info = "info"}
+local severityColors = {success = Color3.fromRGB(78, 201, 120), warning = Color3.fromRGB(242, 176, 70), error = Color3.fromRGB(238, 92, 92)}
+local resolvedIcon = Config.Icon or severityIcons[inferred]
+
 NewNotification.Icon = New("ImageLabel", {
-    Image = Config.Icon and Library:GetIcon(Config.Icon) or "",
+    Image = resolvedIcon and Library:GetIcon(resolvedIcon) or "",
     Size = UDim2.fromOffset(24, 24),
     Position = UDim2.new(0, 14, 0, 14),
     BackgroundTransparency = 1,
@@ -3747,13 +3859,35 @@ NewNotification.Title = New("TextLabel", {
 			}),
 		})
 
+		NewNotification.SeverityBar = New("Frame", {
+			Size = UDim2.new(0, 3, 1, -16),
+			Position = UDim2.fromOffset(5, 8),
+			BorderSizePixel = 0,
+			BackgroundColor3 = severityColors[inferred] or Creator.GetThemeProperty("Accent"),
+			ThemeTag = inferred == "info" and {BackgroundColor3 = "Accent"} or nil,
+		}, {New("UICorner", {CornerRadius = UDim.new(1, 0)})})
+
+		NewNotification.CountLabel = New("TextLabel", {
+			Text = "",
+			Visible = false,
+			Size = UDim2.fromOffset(28, 16),
+			Position = UDim2.new(1, -40, 0, 15),
+			AnchorPoint = Vector2.new(1, 0),
+			BackgroundTransparency = 1,
+			TextSize = 11,
+			FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.SemiBold),
+			ThemeTag = {TextColor3 = "SubText"},
+		})
+
 		NewNotification.Root = New("Frame", {
 			BackgroundTransparency = 1,
 			Size = UDim2.new(1, 0, 1, 0),
 			Position = UDim2.fromScale(1, 0),
 		}, {
 			NewNotification.AcrylicPaint.Frame,
+			NewNotification.SeverityBar,
 		    NewNotification.Icon,
+			NewNotification.CountLabel,
 			NewNotification.Title,
 			NewNotification.CloseButton,
 			NewNotification.LabelHolder,
@@ -3810,6 +3944,20 @@ NewNotification.Title = New("TextLabel", {
 			end
 		end
 
+		function NewNotification:Increment()
+			if self.Closed then return end
+			self.Count = self.Count + 1
+			self.CountLabel.Text = "×" .. tostring(self.Count)
+			self.CountLabel.Visible = true
+			self.ExpireToken = self.ExpireToken + 1
+			local token = self.ExpireToken
+			if Config.Duration then
+				task.delay(Config.Duration, function()
+					if not self.Closed and self.ExpireToken == token then self:Close() end
+				end)
+			end
+		end
+
 		function NewNotification:Open()
 			local ContentSize = NewNotification.LabelHolder.AbsoluteSize.Y
 			NewNotification.Holder.Size = UDim2.new(1, 0, 0, 58 + ContentSize)
@@ -3853,9 +4001,11 @@ NewNotification.Title = New("TextLabel", {
 		table.insert(Library.ActiveNotifications, NewNotification)
 
 		NewNotification:Open()
+		NewNotification.ExpireToken = NewNotification.ExpireToken + 1
+		local token = NewNotification.ExpireToken
 		if Config.Duration then
 			task.delay(Config.Duration, function()
-				NewNotification:Close()
+				if not NewNotification.Closed and NewNotification.ExpireToken == token then NewNotification:Close() end
 			end)
 		end
 		return NewNotification
@@ -4173,8 +4323,8 @@ Components.Window = (function()
 		local requestedHeight = requestedSize.Y.Offset + viewport.Y * requestedSize.Y.Scale
 		local margin = Mobile and 8 or 20
 		local compact = Mobile or viewport.X < 560
-		local fittedWidth = math.min(requestedWidth, math.max(280, viewport.X - margin * 2))
-		local fittedHeight = math.min(requestedHeight, math.max(260, viewport.Y - margin * 2))
+		local fittedWidth = math.min(requestedWidth, math.max(160, viewport.X - margin * 2))
+		local fittedHeight = math.min(requestedHeight, math.max(180, viewport.Y - margin * 2))
 		local requestedTabWidth = tonumber(Config.TabWidth) or 160
 		local resolvedTabWidth = compact and (viewport.X < 420 and 96 or 108) or requestedTabWidth
 
@@ -4585,6 +4735,116 @@ Components.Window = (function()
 		Window.AllElements = AllElements
 		Window.RegisterElement = RegisterElement
 		Window.UpdateElementVisibility = UpdateElementVisibility
+		Window.Commands = {}
+
+		local CommandOverlay = New("Frame", {
+			Size = UDim2.fromScale(1, 1),
+			BackgroundTransparency = 1,
+			Visible = false,
+			Parent = Library.GUI,
+			ZIndex = 100,
+		})
+		local CommandBackdrop = New("TextButton", {
+			Size = UDim2.fromScale(1, 1),
+			Text = "",
+			BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+			BackgroundTransparency = 0.42,
+			Parent = CommandOverlay,
+			ZIndex = 100,
+		})
+		local CommandPanel = New("Frame", {
+			Size = UDim2.fromOffset(Mobile and math.max(160, Camera.ViewportSize.X - 24) or 440, Mobile and math.min(330, math.max(220, Camera.ViewportSize.Y - 32)) or 360),
+			Position = UDim2.fromScale(0.5, Mobile and 0.46 or 0.38),
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Parent = CommandOverlay,
+			ZIndex = 101,
+			ThemeTag = {BackgroundColor3 = "AcrylicMain"},
+		}, {
+			New("UICorner", {CornerRadius = UDim.new(0, 12)}),
+			New("UIStroke", {Transparency = 0.45, ThemeTag = {Color = "AcrylicBorder"}}),
+		})
+		local CommandInput = New("TextBox", {
+			Size = UDim2.new(1, -24, 0, 42),
+			Position = UDim2.fromOffset(12, 12),
+			Text = "",
+			PlaceholderText = "Search commands and actions...",
+			ClearTextOnFocus = false,
+			TextSize = Mobile and 13 or 14,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			BackgroundTransparency = 0.82,
+			Parent = CommandPanel,
+			ZIndex = 102,
+			ThemeTag = {BackgroundColor3 = "Element", TextColor3 = "Text", PlaceholderColor3 = "SubText"},
+		}, {New("UICorner", {CornerRadius = UDim.new(0, 8)}), New("UIPadding", {PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12)})})
+		local CommandResults = New("ScrollingFrame", {
+			Size = UDim2.new(1, -24, 1, -72),
+			Position = UDim2.fromOffset(12, 62),
+			BackgroundTransparency = 1,
+			ScrollBarThickness = 2,
+			AutomaticCanvasSize = Enum.AutomaticSize.Y,
+			CanvasSize = UDim2.new(),
+			Parent = CommandPanel,
+			ZIndex = 102,
+		}, {New("UIListLayout", {Padding = UDim.new(0, 5), SortOrder = Enum.SortOrder.LayoutOrder})})
+
+		local function CloseCommandPalette()
+			CommandOverlay.Visible = false
+			CommandInput:ReleaseFocus()
+		end
+
+		local function RefreshCommandPalette()
+			for _, child in ipairs(CommandResults:GetChildren()) do
+				if not child:IsA("UIListLayout") then child:Destroy() end
+			end
+			local query = string.lower(CommandInput.Text or "")
+			local shown = 0
+			for _, command in ipairs(Window.Commands) do
+				local haystack = string.lower((command.Title or "") .. " " .. (command.Keywords or ""))
+				if query == "" or haystack:find(query, 1, true) then
+					shown = shown + 1
+					if shown > 8 then break end
+					local button = New("TextButton", {
+						Size = UDim2.new(1, -2, 0, Mobile and 42 or 44),
+						Text = "",
+						BackgroundTransparency = 0.9,
+						Parent = CommandResults,
+						ZIndex = 103,
+						ThemeTag = {BackgroundColor3 = "Element"},
+					}, {
+						New("UICorner", {CornerRadius = UDim.new(0, 7)}),
+						New("TextLabel", {Text = command.Title or "Command", Size = UDim2.new(1, -20, 1, 0), Position = UDim2.fromOffset(10, 0), BackgroundTransparency = 1, TextXAlignment = Enum.TextXAlignment.Left, TextSize = Mobile and 12 or 13, ZIndex = 104, ThemeTag = {TextColor3 = "Text"}}),
+					})
+					Creator.AddSignal(button.MouseButton1Click, function()
+						CloseCommandPalette()
+						Library:SafeCallback(command.Callback)
+					end)
+				end
+			end
+		end
+
+		function Window:RegisterCommand(Config)
+			if type(Config) ~= "table" or not Config.Title or type(Config.Callback) ~= "function" then return end
+			table.insert(Window.Commands, Config)
+			RefreshCommandPalette()
+		end
+
+		function Window:OpenCommandPalette(InitialQuery)
+			CommandOverlay.Visible = true
+			CommandInput.Text = InitialQuery or ""
+			RefreshCommandPalette()
+			task.defer(function() CommandInput:CaptureFocus() end)
+		end
+
+		Window.CloseCommandPalette = CloseCommandPalette
+		Creator.AddSignal(CommandBackdrop.MouseButton1Click, CloseCommandPalette)
+		Creator.AddSignal(CommandInput:GetPropertyChangedSignal("Text"), RefreshCommandPalette)
+		Creator.AddSignal(UserInputService.InputBegan, function(input, gameProcessed)
+			if input.KeyCode == Enum.KeyCode.K and (UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or UserInputService:IsKeyDown(Enum.KeyCode.RightControl)) then
+				if CommandOverlay.Visible then CloseCommandPalette() else Window:OpenCommandPalette() end
+			elseif input.KeyCode == Enum.KeyCode.Escape and CommandOverlay.Visible and not gameProcessed then
+				CloseCommandPalette()
+			end
+		end)
 
 		local imageSize = math.max(52, Window.TabWidth - (Window.Compact and 18 or 24))
 		local topOffset = Window.TopOffset or 25
@@ -4900,8 +5160,11 @@ Components.Window = (function()
 			local requested = Window.RequestedSize or Window.Size
 			local requestedX = requested.X.Offset + vp.X * requested.X.Scale
 			local requestedY = requested.Y.Offset + vp.Y * requested.Y.Scale
-			local targetX = math.min(requestedX, math.max(280, vp.X - 16))
-			local targetY = math.min(requestedY, math.max(260, vp.Y - 16))
+			local targetX = math.min(requestedX, math.max(160, vp.X - 16))
+			local targetY = math.min(requestedY, math.max(180, vp.Y - 16))
+			if CommandPanel then
+				CommandPanel.Size = UDim2.fromOffset(math.max(160, vp.X - 24), math.min(330, math.max(220, vp.Y - 32)))
+			end
 			Window.Size = UDim2.fromOffset(targetX, targetY)
 			SizeMotor:setGoal({ X = Instant(targetX), Y = Instant(targetY) })
 			task.defer(CenterWindow)
@@ -5378,6 +5641,10 @@ ElementsTable.Button = (function()
 		})
 
 		Creator.AddSignal(ButtonFrame.Frame.MouseButton1Click, function()
+			if ButtonFrame.Disabled then
+				if ButtonFrame.DisabledReason then Library:Notify({Title = "Unavailable", Content = ButtonFrame.DisabledReason, Duration = 2, Type = "Warning"}) end
+				return
+			end
 			Library:SafeCallback(Config.Callback)
 		end)
 
@@ -5407,6 +5674,11 @@ ElementsTable.Toggle = (function()
 		Toggle.SetDesc = ToggleFrame.SetDesc
 		Toggle.Visible = ToggleFrame.Visible
 		Toggle.Elements = ToggleFrame
+		function Toggle:SetDisabled(Bool, Reason)
+			Toggle.Disabled = Bool and true or false
+			Toggle.DisabledReason = Reason
+			ToggleFrame:SetDisabled(Toggle.Disabled, Reason)
+		end
 
 		local ToggleCircle = New("ImageLabel", {
 			AnchorPoint = Vector2.new(0, 0.5),
@@ -5456,12 +5728,12 @@ ElementsTable.Toggle = (function()
 			Creator.OverrideTag(ToggleCircle, { ImageColor3 = Toggle.Value and "ToggleToggled" or "ToggleSlider" })
 			TweenService:Create(
 				ToggleCircle,
-				TweenInfo.new(0.18, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+				TweenInfo.new(0.18 * (Library.AnimationScale or 1), Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
 				{ Position = UDim2.new(0, Toggle.Value and 19 or 2, 0.5, 0) }
 			):Play()
 			TweenService:Create(
 				ToggleSlider,
-				TweenInfo.new(0.18, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+				TweenInfo.new(0.18 * (Library.AnimationScale or 1), Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
 				{ BackgroundTransparency = Toggle.Value and 0.45 or 1 }
 			):Play()
 			ToggleCircle.ImageTransparency = Toggle.Value and 0 or 0.5
@@ -5476,6 +5748,10 @@ ElementsTable.Toggle = (function()
 		end
 
 		Creator.AddSignal(ToggleFrame.Frame.MouseButton1Click, function()
+			if Toggle.Disabled then
+				if Toggle.DisabledReason then Library:Notify({Title = "Unavailable", Content = Toggle.DisabledReason, Duration = 2, Type = "Warning"}) end
+				return
+			end
 			Toggle:SetValue(not Toggle.Value)
 		end)
 
@@ -5532,6 +5808,11 @@ ElementsTable.Dropdown = (function()
 		Dropdown.SetDesc = DropdownFrame.SetDesc
 		Dropdown.Visible = DropdownFrame.Visible
 		Dropdown.Elements = DropdownFrame
+		function Dropdown:SetDisabled(Bool, Reason)
+			Dropdown.Disabled = Bool and true or false
+			Dropdown.DisabledReason = Reason
+			DropdownFrame:SetDisabled(Dropdown.Disabled, Reason)
+		end
 
 		local container = self.Container
 
@@ -5766,6 +6047,12 @@ ElementsTable.Dropdown = (function()
 
 		local function RecalculateListPosition()
 			if not DropdownHolderCanvas or not DropdownInner then return end
+			if Mobile then
+				local viewportSize = Camera.ViewportSize
+				local height = DropdownHolderCanvas.AbsoluteSize.Y
+				DropdownHolderCanvas.Position = UDim2.fromOffset(8, math.max(8, viewportSize.Y - height - 8))
+				return
+			end
 
 			local dropdownX = DropdownInner.AbsolutePosition.X
 			local dropdownY = DropdownInner.AbsolutePosition.Y
@@ -5921,10 +6208,16 @@ ElementsTable.Dropdown = (function()
 			local searchHeight = Dropdown.Search and 38 or 0
 			local innerMargins = 10
 			local estimatedContent = (visibleCount > 0) and (visibleCount * itemHeight + (visibleCount - 1) * padding + innerMargins + searchHeight) or (innerMargins + searchHeight)
-			local maxHeight = 392
+			local maxHeight = Mobile and math.min(420, math.floor(Camera.ViewportSize.Y * 0.62)) or 392
 			local targetHeight = math.min(estimatedContent, maxHeight)
+			if Mobile then targetHeight = math.max(110, targetHeight) end
 
-			local canvasWidth = math.max(170, ListSizeX > 0 and (ListSizeX + 20) or 170)
+			local canvasWidth
+			if Mobile then
+				canvasWidth = math.max(160, Camera.ViewportSize.X - 16)
+			else
+				canvasWidth = math.max(170, ListSizeX > 0 and (ListSizeX + 20) or 170)
+			end
 			DropdownHolderCanvas.Size = UDim2.fromOffset(canvasWidth, targetHeight)
 
 			local many = visibleCount > 10
@@ -5977,6 +6270,10 @@ ElementsTable.Dropdown = (function()
 		end)
 
 		Creator.AddSignal(DropdownInner.MouseButton1Click, function()
+			if Dropdown.Disabled then
+				if Dropdown.DisabledReason then Library:Notify({Title = "Unavailable", Content = Dropdown.DisabledReason, Duration = 2, Type = "Warning"}) end
+				return
+			end
 			if Dropdown.Opened then
 				Dropdown:Close()
 			else
@@ -6024,6 +6321,7 @@ ElementsTable.Dropdown = (function()
 
 		local ScrollFrame = self.ScrollFrame
 		function Dropdown:Open()
+			if Dropdown.Disabled then return end
 			if Dropdown.Opened then
 				return
 			end
@@ -6046,12 +6344,12 @@ ElementsTable.Dropdown = (function()
 			task.wait()
 			TweenService:Create(
 				DropdownHolderFrame,
-				TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+				TweenInfo.new(0.3 * (Library.AnimationScale or 1), Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
 				{ Size = UDim2.fromScale(1, 1) }
 			):Play()
 			TweenService:Create(
 				DropdownIco,
-				TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+				TweenInfo.new(0.3 * (Library.AnimationScale or 1), Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
 				{ Rotation = openRotation }
 			):Play()
 		end
@@ -6065,7 +6363,7 @@ ElementsTable.Dropdown = (function()
 			DropdownHolderCanvas.Visible = false
 			TweenService:Create(
 				DropdownIco,
-				TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+				TweenInfo.new(0.3 * (Library.AnimationScale or 1), Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
 				{ Rotation = closeRotation }
 			):Play()
 			Dropdown:Display()
@@ -6409,6 +6707,11 @@ ElementsTable.Slider = (function()
 		SliderFrame.DescLabel.Size = UDim2.new(1, -170, 0, 14)
 
 		Slider.Elements = SliderFrame
+		function Slider:SetDisabled(Bool, Reason)
+			Slider.Disabled = Bool and true or false
+			Slider.DisabledReason = Reason
+			SliderFrame:SetDisabled(Slider.Disabled, Reason)
+		end
 		Slider.SetTitle = SliderFrame.SetTitle
 		Slider.SetDesc = SliderFrame.SetDesc
 		Slider.Visible = SliderFrame.Visible
@@ -6656,6 +6959,7 @@ ElementsTable.Slider = (function()
 		end)
 
 		Creator.AddSignal(SliderDot.InputBegan, function(Input)
+			if Slider.Disabled then return end
 			if
 				Input.UserInputType == Enum.UserInputType.MouseButton1
 				or Input.UserInputType == Enum.UserInputType.Touch
@@ -6690,6 +6994,7 @@ ElementsTable.Slider = (function()
 		end)
 
 		Creator.AddSignal(SliderRail.InputBegan, function(Input)
+			if Slider.Disabled then return end
 			if Input.UserInputType == Enum.UserInputType.Touch then
 				Dragging = true
 				local SizeScale = math.clamp((Input.Position.X - SliderRail.AbsolutePosition.X) / SliderRail.AbsoluteSize.X, 0, 1)
@@ -9191,8 +9496,8 @@ Library.CreateWindow = function(self, Config)
 
 	Library.MinimizeKey = Config.MinimizeKey or Enum.KeyCode.LeftControl
 
+	Library.AcrylicRequested = Config.Acrylic == true
 	Library.UseAcrylic = Config.Acrylic == true and not Mobile
-
 	Library.Acrylic = Library.UseAcrylic
 
 	Library.Theme = Config.Theme or "Dark"
@@ -9710,6 +10015,35 @@ function Library:CreateAcrylicOverlay(Config)
 	end
 
 	return overlay
+end
+
+function Library:RegisterCommand(Config)
+	if Library.Window and Library.Window.RegisterCommand then
+		Library.Window:RegisterCommand(Config)
+	end
+end
+
+function Library:OpenCommandPalette(Query)
+	if Library.Window and Library.Window.OpenCommandPalette then
+		Library.Window:OpenCommandPalette(Query)
+	end
+end
+
+function Library:SetPerformanceMode(Enabled)
+	Enabled = Enabled and true or false
+	Library.PerformanceMode = Enabled
+	Library.AnimationScale = Enabled and 0.55 or 1
+	if Library.Window and Library.UseAcrylic then
+		if Enabled then
+			if Acrylic.Disable then Acrylic.Disable() end
+			if Library.Window.AcrylicPaint and Library.Window.AcrylicPaint.SetVisibility then Library.Window.AcrylicPaint.SetVisibility(false) end
+			Library:ToggleAcrylic(false)
+		else
+			if Acrylic.Enable then Acrylic.Enable() end
+			if Library.Window.AcrylicPaint and Library.Window.AcrylicPaint.SetVisibility then Library.Window.AcrylicPaint.SetVisibility(not Library.Window.Minimized) end
+			Library:ToggleAcrylic(Library.AcrylicRequested)
+		end
+	end
 end
 
 function Library:SetTheme(Value)
